@@ -42,6 +42,52 @@ class CustomQuadtree extends d3.quadtree {
 
 const quadtree = new CustomQuadtree(-50, -50, 100, 100, 8, 0.5);
 
+function randomResizeCylinders(node) {
+  if (!node.nodes) {
+    const extent = node.extent;
+    const width = extent[1][0] - extent[0][0];
+    const height = extent[1][1] - extent[0][1];
+
+    const buffer = 0.2;
+    const newRadius = (Math.random() * width * (1 - buffer)) / 2;
+    const newHeight = Math.random() * height * (1 - buffer);
+
+    const newGeometry = new THREE.CylinderGeometry(newRadius, newRadius, newHeight, 32);
+    node.userData.cylinder.geometry.dispose(); // Dispose of old geometry
+    node.userData.cylinder.geometry = newGeometry; // Assign new geometry to the cylinder
+
+    // Generate colors for the new geometry
+    generateCylinderColors(newGeometry);
+
+    // Update the position of the cylinder
+    node.userData.cylinder.position.set(extent[0][0] + width / 2, extent[0][1] + height / 2, newHeight / 2 - newHeight / 2); // Set z value to 0
+  } else {
+    for (const childNode of node.nodes) {
+      randomResizeCylinders(childNode);
+    }
+  }
+}
+
+// Get the button element by its ID
+const randomizeButton = document.getElementById("randomizeButton");
+
+// Add an event listener for the button click
+randomizeButton.addEventListener("click", () => {
+  randomResizeCylinders(quadtree._root);
+});
+
+// Function to generate colors for cylinder geometry
+function generateCylinderColors(geometry) {
+  const colors = [];
+  const color1 = new THREE.Color(Math.random(), Math.random(), Math.random());
+  const color2 = new THREE.Color(Math.random(), Math.random(), Math.random());
+  for (let i = 0; i < geometry.attributes.position.count; i++) {
+    colors.push(color1.r, color1.g, color1.b);
+    colors.push(color2.r, color2.g, color2.b);
+  }
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+}
+
 function adjustQuadtree(node, factor) {
   const extent = node.extent;
   const width = extent[1][0] - extent[0][0];
@@ -107,6 +153,8 @@ function placeCylindersAndOutlines(node) {
       color: 0xffffff,
       vertexColors: true,
     });
+
+     generateCylinderColors(cylinderGeometry);
 
     const colors = [];
     const color1 = new THREE.Color(Math.random(), Math.random(), Math.random());
