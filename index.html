@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>hardCandyPrayerWheels</title></title>
+  <style>
+    body {
+      margin: 0;
+      background-image: url('californiaGold.jpg');
+      background-repeat: no-repeat;
+      background-size: cover;
+      background-position: center;
+    }
+
+    canvas {
+      display: block;
+    }
+
+    #controls {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background-color: rgba(255, 255, 255, 0.5);
+      padding: 10px;
+      border-radius: 5px;
+
+    }
+
+    #controls2 {
+      position: absolute;
+      top: 70px;
+      left: 10px;
+      background-color: rgba(255, 255, 255, 0.5);
+      padding: 10px;
+      border-radius: 5px;
+    }
+
+    #revolution-counter {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background-color: rgba(255, 255, 255, 0.5);
+      padding: 10px;
+      border-radius: 5px;
+    }
+    }
+  </style>
+</head>
+
+<body>
+
+  <div id="controls">
+    <label for="rotation">y.rot: </label>
+    <input type="range" id="rotation" min="0" max="0.2" step="0.001" value="0.01">
+  </div>
+  <div id="controls2">
+    <label for="camera-z">camera z: </label>
+    <input type="range" id="camera-z" min="25" max="200" value="100" step="1" />
+  </div>
+  <!-- revolutions counting to samsara -->
+  <div id="revolution-counter">0 revolutions</div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://d3js.org/d3-quadtree.v2.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
