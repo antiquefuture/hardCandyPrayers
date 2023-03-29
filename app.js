@@ -1,11 +1,11 @@
 // Set up the scene, camera, and renderer
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-
 const renderer = new THREE.WebGLRenderer({ alpha: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
+//call the library and create new quadtree
 class CustomQuadtree extends d3.quadtree {
   constructor(x, y, width, height, maxDepth, randomBias) {
     super();
@@ -39,9 +39,12 @@ class CustomQuadtree extends d3.quadtree {
     this.subdivide(this._root, this._extent, this._maxDepth);
   }
 }
+const quadtree = new CustomQuadtree(-50, -50, 100, 100, 4, 0.5);
 
-const quadtree = new CustomQuadtree(-50, -50, 100, 100, 8, 0.5);
+// Set the camera position
+camera.position.z = 150;
 
+// creates new cylinder geometry if random cylinder button is pressed
 function randomResizeCylinders(node) {
   if (!node.nodes) {
     const extent = node.extent;
@@ -53,14 +56,14 @@ function randomResizeCylinders(node) {
     const newHeight = Math.random() * height * (1 - buffer);
 
     const newGeometry = new THREE.CylinderGeometry(newRadius, newRadius, newHeight, 32);
-    node.userData.cylinder.geometry.dispose(); // Dispose of old geometry
-    node.userData.cylinder.geometry = newGeometry; // Assign new geometry to the cylinder
+    node.userData.object.geometry.dispose(); // Dispose of old geometry
+    node.userData.object.geometry = newGeometry; // Assign new geometry to the cylinder
 
     // Generate colors for the new geometry
     generateCylinderColors(newGeometry);
 
     // Update the position of the cylinder
-    node.userData.cylinder.position.set(extent[0][0] + width / 2, extent[0][1] + height / 2, newHeight / 2 - newHeight / 2); // Set z value to 0
+    node.userData.object.position.set(extent[0][0] + width / 2, extent[0][1] + height / 2, newHeight / 2); // Corrected z value
   } else {
     for (const childNode of node.nodes) {
       randomResizeCylinders(childNode);
@@ -68,7 +71,7 @@ function randomResizeCylinders(node) {
   }
 }
 
-// Get the button element by its ID
+// Get the randomize cylinder button element by its ID
 const randomizeButton = document.getElementById("randomizeButton");
 
 // Add an event listener for the button click
@@ -88,40 +91,6 @@ function generateCylinderColors(geometry) {
   geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
 }
 
-function adjustQuadtree(node, factor) {
-  const extent = node.extent;
-  const width = extent[1][0] - extent[0][0];
-  const height = extent[1][1] - extent[0][1];
-
-  if (node.nodes) {
-    for (const childNode of node.nodes) {
-      adjustQuadtree(childNode, factor);
-    }
-  } else {
-    // Update the size of the cylinder
-    const buffer = 0.2;
-    const radius = (width * (1 - buffer)) / 4 * factor;
-    const newGeometry = new THREE.CylinderGeometry(radius, radius, height * (1 - buffer), 32);
-    node.userData.cylinder.geometry.dispose(); // Dispose of old geometry
-    node.userData.cylinder.geometry = newGeometry; // Assign new geometry to the cylinder
-  }
-
-  // Adjust the Quadtree grid size
-  node.extent = [
-    [extent[0][0] * factor, extent[0][1] * factor],
-    [extent[1][0] * factor, extent[1][1] * factor]
-  ];
-
-  // Update the position and size of the outline
-  const outline = node.userData && node.userData.outline;
-  if (outline) {
-    const newOutline = createWireframeRectangle(width * factor, height * factor, 0x000000);
-    newOutline.position.set(extent[0][0] * factor, extent[0][1] * factor, 0);
-    scene.remove(outline);
-    scene.add(newOutline);
-    node.userData.outline = newOutline;
-  }
-}
 
 // Function to create a wireframe rectangle with a random color
 function createWireframeRectangle(width, height) {
@@ -142,48 +111,131 @@ function createWireframeRectangle(width, height) {
 
 const cylinders = [];
 
-function placeCylindersAndOutlines(node) {
+// Function to create lines from the corners of the quadtree towards the camera
+function createCornerLines(width, height, zDistance) {
+  const lineThickness = 0.2; // Set line thickness
+  const lineLength = zDistance * 1; // Set line length
+
+  const cornerLinesGroup = new THREE.Group();
+
+  const lineGeometry = new THREE.BoxGeometry(lineThickness, lineThickness, lineLength);
+  const lineMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+
+  const positions = [
+    [0, 0, -lineLength / 2],
+    [width, 0, -lineLength / 2],
+    [width, height, -lineLength / 2],
+    [0, height, -lineLength / 2],
+  ];
+
+  positions.forEach((position) => {
+    const line = new THREE.Mesh(lineGeometry, lineMaterial);
+    line.position.set(...position);
+    cornerLinesGroup.add(line);
+  });
+
+  return cornerLinesGroup;
+}
+
+// create the vase shapes from the points supplied
+function createVase(points) {
+  const geometry = new THREE.LatheGeometry(points, 32);
+  generateCylinderColors(geometry);
+
+  const material = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    vertexColors: true,
+  });
+
+  const vase = new THREE.Mesh(geometry, material);
+
+  // Get the bounding box and calculate the midpoint of the vase
+  const boundingBox = new THREE.Box3().setFromObject(vase);
+  const midpoint = new THREE.Vector3();
+  boundingBox.getCenter(midpoint);
+
+  // Translate the vase so that the midpoint is at the origin
+  vase.geometry.translate(-midpoint.x, -midpoint.y, -midpoint.z);
+
+  return vase;
+}
+
+function placeVasesRandomly(node) {
   if (!node.nodes) {
+    if (!node.userData.object) {
+      const randomNumber = Math.random();
+
+      if (randomNumber < 0.5) {
+        const points = randomizeVaseProfile();
+        const vase = createVase(points);
+        const extent = node.extent;
+        const width = extent[1][0] - extent[0][0];
+        const height = extent[1][1] - extent[0][1];
+        vase.position.set(extent[0][0] + width / 2, extent[0][1] + height / 2, 0);
+        vase.rotation.y = Math.random() * Math.PI * 2;
+        scene.add(vase);
+        node.userData.vase = vase;
+      }
+    }
+  } else {
+    for (const childNode of node.nodes) {
+      placeVasesRandomly(childNode);
+    }
+  }
+}
+
+//create a series of points to form the vase profile
+function randomizeVaseProfile() {
+  const points = [];
+  const numPoints = Math.floor(Math.random() * 4) + 4; // 4 to 7 points
+
+  for (let i = 0; i < numPoints; i++) {
+    const x = Math.random() * 20;
+    const y = (i / (numPoints - 1)) * 100;
+    points.push(new THREE.Vector2(x, y));
+  }
+
+  return points;
+}
+// Get the RANDOMVASE button element by its ID
+const randomizeVaseButton = document.getElementById("randomizeVaseButton");
+
+// Add an event listener for the button click
+randomizeVaseButton.addEventListener("click", () => {
+  randomizeAllVaseProfiles(quadtree._root);
+});
+
+function randomizeAllVaseProfiles(node) {
+  if (!node.nodes) {
+    if (node.userData && node.userData.object) {
+      scene.remove(node.userData.object);
+    }
     const extent = node.extent;
     const width = extent[1][0] - extent[0][0];
     const height = extent[1][1] - extent[0][1];
-    const buffer = 0.2;
-    const cylinderGeometry = new THREE.CylinderGeometry((width * (1 - buffer)) / 4, (width * (1 - buffer)) / 4, height * (1 - buffer), 32);
-    const cylinderMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      vertexColors: true,
-    });
+    const points = randomizeVaseProfile();
+    const vase = createVase(points);
 
-     generateCylinderColors(cylinderGeometry);
+    // Scale the vase to fit inside the quadtree square
+    const boundingBox = new THREE.Box3().setFromObject(vase);
+    const vaseWidth = boundingBox.max.x - boundingBox.min.x;
+    const vaseHeight = boundingBox.max.y - boundingBox.min.y;
+    const scale = Math.min(width / vaseWidth, height / vaseHeight) * 0.8;
+    vase.scale.set(scale, scale, scale);
 
-    const colors = [];
-    const color1 = new THREE.Color(Math.random(), Math.random(), Math.random());
-    const color2 = new THREE.Color(Math.random(), Math.random(), Math.random());
-    for (let i = 0; i < cylinderGeometry.attributes.position.count; i++) {
-      colors.push(color1.r, color1.g, color1.b);
-      colors.push(color2.r, color2.g, color2.b);
-    }
-    cylinderGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-
-    const cylinder = new THREE.Mesh(cylinderGeometry, cylinderMaterial);
-    cylinder.position.set(extent[0][0] + width / 2, extent[0][1] + height / 2, 0);
-    scene.add(cylinder);
-    node.userData = { cylinder: cylinder };
-
-    // Draw solid rectangle with random color and opacity
-    const rectangleGeometry = new THREE.PlaneGeometry(width, height);
-    const rectangleColor = new THREE.Color(Math.random(), Math.random(), Math.random());
-    const rectangleOpacity = Math.random();
-    const rectangleMaterial = new THREE.MeshBasicMaterial({ color: rectangleColor, opacity: rectangleOpacity, transparent: true, side: THREE.DoubleSide });
-    const rectangle = new THREE.Mesh(rectangleGeometry, rectangleMaterial);
-    rectangle.position.set(extent[0][0] + width / 2, extent[0][1] + height / 2, -0.1); // Change z position to -0.1
-    scene.add(rectangle);
+    // Position the vase in the center of the quadtree square
+    vase.position.set(extent[0][0] + width / 2, extent[0][1] + height / 2, 0);
+    vase.rotation.y = Math.random() * Math.PI * 2;
+    scene.add(vase);
+    node.userData = { object: vase };
   } else {
     for (const childNode of node.nodes) {
-      placeCylindersAndOutlines(childNode);
+      randomizeAllVaseProfiles(childNode);
     }
   }
+}
 
+function placeObjectsAndOutlines(node) {
   // Draw outline
   const extent = node.extent;
   const width = extent[1][0] - extent[0][0];
@@ -191,13 +243,46 @@ function placeCylindersAndOutlines(node) {
   const outline = createWireframeRectangle(width, height, 0x000000); // Change color to black
   outline.position.set(extent[0][0], extent[0][1], 0);
   scene.add(outline);
+
+  if (!node.nodes) {
+    const randomNumber = Math.random();
+
+    if (randomNumber < 0.5) {
+      // Place a cylinder
+      const buffer = 0.2;
+      const cylinderGeometry = new THREE.CylinderGeometry((width * (1 - buffer)) / 4, (width * (1 - buffer)) / 4, height * (1 - buffer), 32);
+      const cylinderMaterial = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        vertexColors: true,
+      });
+
+      generateCylinderColors(cylinderGeometry);
+
+      const cylinder = new THREE.Mesh(cylinderGeometry, cylinderMaterial);
+      cylinder.position.set(extent[0][0] + width / 2, extent[0][1] + height / 2, height * (1 - buffer) / 2);
+      scene.add(cylinder);
+      node.userData = { object: cylinder };
+    } else {
+      // Place a vase
+      const points = randomizeVaseProfile();
+      const vase = createVase(points);
+      vase.position.set(extent[0][0] + width / 2, extent[0][1] + height / 2, 0);
+      vase.rotation.y = Math.random() * Math.PI * 2;
+      scene.add(vase);
+      node.userData = { object: vase };
+    }
+  } else {
+    for (const childNode of node.nodes) {
+      placeObjectsAndOutlines(childNode);
+    }
+  }
 }
 
+// Call the function to place objects and outlines
+placeObjectsAndOutlines(quadtree._root);
 
-placeCylindersAndOutlines(quadtree._root);
-
-// Set the camera position
-camera.position.z = 100;
+// Resize the vases to fit the quadtrees when they are initially created
+randomizeAllVaseProfiles(quadtree._root);
 
 // Get slider elements
 const rotationSlider = document.getElementById('rotation');
@@ -221,8 +306,16 @@ const revolutionCounter = { revolutions: 0, rotationY: 0 };
 const revolutionCounterElement = document.getElementById('revolution-counter');
 
 function traverseAndRotate(node) {
-  if (node.userData && node.userData.cylinder) {
-    node.userData.cylinder.rotation.y += yRotationSpeed;
+  if (node.userData && node.userData.object) {
+    node.userData.object.rotation.y += yRotationSpeed;
+
+    if (node.userData.object === cylinders[0]) {
+      revolutionCounter.rotationY += yRotationSpeed;
+      if (revolutionCounter.rotationY >= Math.PI * 2) {
+        revolutionCounter.rotationY -= Math.PI * 2;
+        revolutionCounter.revolutions++;
+      }
+    }
   } else if (node.nodes) {
     for (const childNode of node.nodes) {
       traverseAndRotate(childNode);
@@ -235,21 +328,6 @@ function animate() {
   requestAnimationFrame(animate);
 
   traverseAndRotate(quadtree._root);
-
-  // Update rotation for all cylinders
-  cylinders.forEach((cylinder, index) => {
-    //cylinder.rotation.x += 0.1;
-    cylinder.rotation.y += yRotationSpeed;
-
-    // Update the revolution counter for the first cylinder
-    if (index === 0) {
-      revolutionCounter.rotationY += yRotationSpeed;
-      if (revolutionCounter.rotationY >= 2 * Math.PI) {
-        revolutionCounter.rotationY -= 2 * Math.PI;
-        revolutionCounter.revolutions++;
-      }
-    }
-  });
 
   // Update the revolution count display for the first cylinder
   revolutionCounterElement.innerHTML = ` ${revolutionCounter.revolutions} revolutions`;
